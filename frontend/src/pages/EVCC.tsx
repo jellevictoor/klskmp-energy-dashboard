@@ -1,9 +1,8 @@
-import React, { useEffect, useState } from 'react'
-import { Battery, Car, Thermometer } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Car, Thermometer } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card'
-import { StatCard } from '@/components/StatCard'
 import { evccApi } from '@/lib/api'
-import { formatPower, formatEnergy, formatCurrency } from '@/lib/utils'
+import { formatPower, formatEnergy } from '@/lib/utils'
 
 export function EVCC() {
   const [status, setStatus] = useState<any>(null)

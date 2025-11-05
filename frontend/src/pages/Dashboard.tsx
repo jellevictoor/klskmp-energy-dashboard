@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Zap, Sun, TrendingUp, TrendingDown, Activity, Euro } from 'lucide-react'
 import { StatCard } from '@/components/StatCard'
 import { ConsumptionChart } from '@/components/ConsumptionChart'
