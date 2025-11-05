@@ -41,9 +41,9 @@ export function Analytics() {
     )
   }
 
-  const hourlyData = peakTimes?.hourlyAverages.map((avg: number, hour: number) => ({
+  const hourlyData = peakTimes?.hourlyAverages?.map((avg: number, hour: number) => ({
     hour: `${hour}:00`,
-    average: (avg / 1000).toFixed(2), // Convert to kW
+    average: avg != null ? (avg / 1000).toFixed(2) : '0', // Convert to kW
   })) || []
 
   return (
@@ -68,10 +68,10 @@ export function Analytics() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground mb-2">
-              Average Peak: {insights?.fluviusTariff.averagePeak.toFixed(2)} W
+              Average Peak: {insights?.fluviusTariff?.averagePeak?.toFixed(2) || 'N/A'} W
             </p>
             <p className="text-sm">
-              {insights?.fluviusTariff.recommendation}
+              {insights?.fluviusTariff?.recommendation || 'No data available'}
             </p>
           </CardContent>
         </Card>
@@ -86,10 +86,10 @@ export function Analytics() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground mb-2">
-              Ratio: {insights?.selfConsumption.ratio.toFixed(1)}%
+              Ratio: {insights?.selfConsumption?.ratio?.toFixed(1) || 'N/A'}%
             </p>
             <p className="text-sm">
-              {insights?.selfConsumption.recommendation}
+              {insights?.selfConsumption?.recommendation || 'No data available'}
             </p>
           </CardContent>
         </Card>
@@ -104,7 +104,7 @@ export function Analytics() {
           </CardHeader>
           <CardContent>
             <p className="text-sm">
-              {insights?.costs.recommendation}
+              {insights?.costs?.recommendation || 'No data available'}
             </p>
           </CardContent>
         </Card>
@@ -123,20 +123,24 @@ export function Analytics() {
             <div>
               <p className="text-sm text-muted-foreground">This Month</p>
               <p className="text-2xl font-bold">
-                {(comparison?.current / 1000).toFixed(2)} kWh
+                {comparison?.current != null ? (comparison.current / 1000).toFixed(2) : 'N/A'} kWh
               </p>
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Last Month</p>
               <p className="text-2xl font-bold">
-                {(comparison?.previous / 1000).toFixed(2)} kWh
+                {comparison?.previous != null ? (comparison.previous / 1000).toFixed(2) : 'N/A'} kWh
               </p>
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Change</p>
               <p className={`text-2xl font-bold ${comparison?.trend === 'up' ? 'text-red-500' : 'text-green-500'}`}>
-                {comparison?.percentageChange > 0 ? '+' : ''}
-                {comparison?.percentageChange.toFixed(1)}%
+                {comparison?.percentageChange != null ? (
+                  <>
+                    {comparison.percentageChange > 0 ? '+' : ''}
+                    {comparison.percentageChange.toFixed(1)}%
+                  </>
+                ) : 'N/A'}
               </p>
             </div>
           </div>
@@ -174,7 +178,7 @@ export function Analytics() {
           </ResponsiveContainer>
           <div className="mt-4">
             <p className="text-sm text-muted-foreground">
-              {peakTimes?.recommendation}
+              {peakTimes?.recommendation || 'No recommendations available'}
             </p>
           </div>
         </CardContent>

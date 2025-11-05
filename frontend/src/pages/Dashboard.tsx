@@ -126,7 +126,7 @@ export function Dashboard() {
         <StatCard
           title="Self Consumption"
           value={formatEnergy(overview.today.selfConsumption * 1000)}
-          subtitle={`${((overview.today.selfConsumption / overview.today.consumption) * 100).toFixed(0)}% of consumption`}
+          subtitle={overview.today.consumption > 0 ? `${((overview.today.selfConsumption / overview.today.consumption) * 100).toFixed(0)}% of consumption` : 'N/A'}
         />
         <StatCard
           title="Grid Export"
@@ -151,19 +151,19 @@ export function Dashboard() {
             <div>
               <p className="text-sm text-muted-foreground">Average Peak</p>
               <p className="text-2xl font-bold">
-                {overview.fluvius.averagePeak.toFixed(2)} kW
+                {overview.fluvius?.averagePeak?.toFixed(2) || 'N/A'} kW
               </p>
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Monthly Cost</p>
               <p className="text-2xl font-bold">
-                {formatCurrency(overview.fluvius.monthlyCost)}
+                {formatCurrency(overview.fluvius?.monthlyCost || 0)}
               </p>
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Yearly Estimate</p>
               <p className="text-2xl font-bold">
-                {formatCurrency(overview.fluvius.yearlyCost)}
+                {formatCurrency(overview.fluvius?.yearlyCost || 0)}
               </p>
             </div>
           </div>

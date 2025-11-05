@@ -178,7 +178,7 @@ export function Costs() {
             <div>
               <p className="text-sm text-muted-foreground">Average Peak</p>
               <p className="text-2xl font-bold">
-                {(fluvius?.averagePeak / 1000).toFixed(2)} kW
+                {fluvius?.averagePeak ? (fluvius.averagePeak / 1000).toFixed(2) : 'N/A'} kW
               </p>
             </div>
             <div>
