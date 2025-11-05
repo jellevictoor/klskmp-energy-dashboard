@@ -74,12 +74,16 @@ tariffRouter.get('/self-consumption', async (req, res) => {
 
 /**
  * GET /api/tariff/current-price
- * Get current electricity price
+ * Get current electricity price with breakdown
  */
 tariffRouter.get('/current-price', async (req, res) => {
   try {
-    const price = await tariffService.getCurrentPrice();
-    res.json({ price, currency: 'EUR', unit: 'kWh' });
+    const priceData = await tariffService.getCurrentPrice();
+    res.json({
+      ...priceData,
+      currency: 'EUR',
+      unit: 'kWh',
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -93,6 +97,19 @@ tariffRouter.get('/forecast', async (req, res) => {
   try {
     const forecast = await tariffService.getPriceForecast();
     res.json(forecast);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/tariff/rates
+ * Get all Ecopower tariff rates and formulas
+ */
+tariffRouter.get('/rates', async (req, res) => {
+  try {
+    const rates = tariffService.getTariffRates();
+    res.json(rates);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
