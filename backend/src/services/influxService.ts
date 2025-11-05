@@ -25,7 +25,7 @@ export class InfluxService {
     const meterFilter = meter ? `|> filter(fn: (r) => r.meter == "${meter}")` : '';
 
     const query = `
-      from(bucket: "${influxConfig.bucket}")
+      from(bucket: "${influxConfig.meteringBucket}")
         |> range(start: ${start}, stop: ${stop})
         |> filter(fn: (r) => r._measurement == "${influxConfig.measurements.consumption}")
         |> filter(fn: (r) => r._field == "energy" or r._field == "power")
@@ -46,7 +46,7 @@ export class InfluxService {
     window: string = '1h'
   ): Promise<EnergyDataPoint[]> {
     const query = `
-      from(bucket: "${influxConfig.bucket}")
+      from(bucket: "${influxConfig.meteringBucket}")
         |> range(start: ${start}, stop: ${stop})
         |> filter(fn: (r) => r._measurement == "${influxConfig.measurements.production}")
         |> filter(fn: (r) => r._field == "power" or r._field == "energy")
@@ -66,7 +66,7 @@ export class InfluxService {
     stop: string
   ): Promise<any> {
     const query = `
-      from(bucket: "${influxConfig.bucket}")
+      from(bucket: "${influxConfig.meteringBucket}")
         |> range(start: ${start}, stop: ${stop})
         |> filter(fn: (r) => r._measurement == "${influxConfig.measurements.p1}")
         |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
@@ -85,7 +85,7 @@ export class InfluxService {
     stop: string
   ): Promise<EnergyDataPoint[]> {
     const query = `
-      from(bucket: "${influxConfig.bucket}")
+      from(bucket: "${influxConfig.pricesBucket}")
         |> range(start: ${start}, stop: ${stop})
         |> filter(fn: (r) => r._measurement == "${influxConfig.measurements.price}")
         |> filter(fn: (r) => r._field == "price" or r._field == "buy_price")
@@ -107,7 +107,7 @@ export class InfluxService {
     currentPrice?: number;
   }> {
     const query = `
-      from(bucket: "${influxConfig.bucket}")
+      from(bucket: "${influxConfig.meteringBucket}")
         |> range(start: -5m)
         |> filter(fn: (r) =>
           r._measurement == "${influxConfig.measurements.consumption}" or
@@ -166,7 +166,7 @@ export class InfluxService {
    */
   async calculateMonthlyPeaks(months: number = 12): Promise<number[]> {
     const query = `
-      from(bucket: "${influxConfig.bucket}")
+      from(bucket: "${influxConfig.meteringBucket}")
         |> range(start: -${months}mo)
         |> filter(fn: (r) => r._measurement == "${influxConfig.measurements.consumption}")
         |> filter(fn: (r) => r._field == "power")
@@ -187,7 +187,7 @@ export class InfluxService {
       import "influxdata/influxdb/schema"
 
       schema.tagValues(
-        bucket: "${influxConfig.bucket}",
+        bucket: "${influxConfig.meteringBucket}",
         tag: "meter",
         predicate: (r) => r._measurement == "${influxConfig.measurements.consumption}",
         start: -30d
