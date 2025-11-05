@@ -18,6 +18,27 @@ dashboardRouter.get('/test', (req, res) => {
 });
 
 /**
+ * GET /api/dashboard/debug-p1
+ * Debug P1 data structure
+ */
+dashboardRouter.get('/debug-p1', async (req, res) => {
+  try {
+    const p1Test = await influxService.testConnection();
+    const p1Data = await influxService.queryP1Power('-1h', 'now()', '5m');
+
+    res.json({
+      sampleData: p1Test.slice(0, 3),
+      p1PowerResults: {
+        count: p1Data.length,
+        sample: p1Data.slice(0, 3)
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message, stack: error.stack });
+  }
+});
+
+/**
  * GET /api/dashboard/overview
  * Get complete dashboard overview
  */
