@@ -4,8 +4,12 @@ import { Dashboard } from './pages/Dashboard'
 import { Analytics } from './pages/Analytics'
 import { Costs } from './pages/Costs'
 import { EVCC } from './pages/EVCC'
+import { useDarkMode } from './hooks/useDarkMode'
 
 function App() {
+  // Enable automatic dark mode based on system preference
+  useDarkMode()
+
   return (
     <Layout>
       <Routes>
