@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Generate changelog
+      id: changelog
+      run: |
+        echo "## What's Changed" > CHANGELOG.md
+        git log $(git describe --tags --abbrev=0 HEAD^)..HEAD --pretty=format:"* %s (%h)" >> CHANGELOG.md
+
+    - name: Create Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref_name }}
+        release_name: Release ${{ github.ref_name }}
+        body_path: CHANGELOG.md
+        draft: false
+        prerelease: false
+
+    - name: Create docker-compose.yml for release
+      run: |
+        cat > docker-compose.release.yml << 'EOF'
+        version: '3.8'
+
+        services:
+          backend:
+            image: ghcr.io/${{ github.repository }}-backend:${{ github.ref_name }}
+            container_name: energy-dashboard-backend
+            ports:
+              - "3001:3001"
+            environment:
+              - NODE_ENV=production
+            env_file:
+              - .env
+            restart: unless-stopped
+
+          frontend:
+            image: ghcr.io/${{ github.repository }}-frontend:${{ github.ref_name }}
+            container_name: energy-dashboard-frontend
+            ports:
+              - "80:80"
+            depends_on:
+              - backend
+            restart: unless-stopped
+        EOF
+
+    - name: Upload docker-compose.yml
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./docker-compose.release.yml
+        asset_name: docker-compose.yml
+        asset_content_type: text/yaml
