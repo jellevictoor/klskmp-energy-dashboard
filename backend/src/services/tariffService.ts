@@ -2,14 +2,21 @@ import { influxService } from './influxService';
 
 export interface TariffCalculation {
   totalCost: number;
-  energyCost: number;
-  capacityCost: number;
-  feedInRevenue: number;
   netCost: number;
   breakdown: {
-    consumptionCost: number;
-    productionRevenue: number;
-    fluviusCapacityTariff: number;
+    fixedCost: number;
+    energyCost: number;
+    energyRevenue: number;
+    distributionCost: number;
+    injectionCost: number;
+    gscCost: number;
+    wkkCost: number;
+    capacityCost: number;
+  };
+  usage: {
+    totalKwhDelivered: number;
+    totalKwhReturned: number;
+    peakPowerKw: number;
   };
 }
 
@@ -22,6 +29,84 @@ export interface FluviusCapacityTariff {
 }
 
 export class TariffService {
+  // Ecopower Tariff Constants (October 2025)
+  // Fixed monthly subscription costs (EUR/month)
+  private readonly ECOPOWER_SUBSCRIPTION = 5.0;
+  private readonly FLUVIUS_SUBSCRIPTION = 2.0;
+
+  // Energy cost coefficients (based on EPEX price in EUR/MWh)
+  private readonly CONSUMPTION_COEFFICIENT = 0.00102;
+  private readonly CONSUMPTION_FIXED = 0.004;
+
+  // Injection revenue coefficients (based on EPEX price in EUR/MWh)
+  private readonly INJECTION_COEFFICIENT = 0.00098;
+  private readonly INJECTION_FIXED = -0.015;
+
+  // Distribution and other costs (EUR/kWh)
+  private readonly DISTRIBUTION_TARIFF = 0.0704386;
+  private readonly INJECTION_TARIFF = 0.0017510;
+  private readonly GSC_TARIFF = 0.011;
+  private readonly WKK_TARIFF = 0.00392;
+
+  // Capacity tariff (EUR/kW/year)
+  private readonly CAPACITY_TARIFF_YEARLY = 56.93;
+
+  /**
+   * Calculate monthly fixed subscription cost
+   */
+  private calculateFixedCost(): number {
+    return this.ECOPOWER_SUBSCRIPTION + this.FLUVIUS_SUBSCRIPTION;
+  }
+
+  /**
+   * Calculate energy cost per kWh based on EPEX day-ahead price
+   */
+  private calculateEnergyCostPerKwh(epexPriceEurMwh: number): number {
+    return this.CONSUMPTION_COEFFICIENT * epexPriceEurMwh + this.CONSUMPTION_FIXED;
+  }
+
+  /**
+   * Calculate energy injection revenue per kWh based on EPEX day-ahead price
+   */
+  private calculateEnergyRevenuePerKwh(epexPriceEurMwh: number): number {
+    return this.INJECTION_COEFFICIENT * epexPriceEurMwh + this.INJECTION_FIXED;
+  }
+
+  /**
+   * Calculate distribution network cost
+   */
+  private calculateDistributionCost(kwh: number): number {
+    return kwh * this.DISTRIBUTION_TARIFF;
+  }
+
+  /**
+   * Calculate injection (prosumer) tariff cost
+   */
+  private calculateInjectionCost(kwh: number): number {
+    return kwh * this.INJECTION_TARIFF;
+  }
+
+  /**
+   * Calculate green certificate (GSC) cost
+   */
+  private calculateGscCost(kwh: number): number {
+    return kwh * this.GSC_TARIFF;
+  }
+
+  /**
+   * Calculate CHP (WKK) surcharge cost
+   */
+  private calculateWkkCost(kwh: number): number {
+    return kwh * this.WKK_TARIFF;
+  }
+
+  /**
+   * Calculate monthly capacity cost based on peak power
+   */
+  private calculateMonthlyCapacityCost(peakPowerKw: number): number {
+    return (peakPowerKw * this.CAPACITY_TARIFF_YEARLY) / 12;
+  }
+
   /**
    * Calculate Fluvius capacity tariff based on peak consumption
    *
@@ -61,62 +146,103 @@ export class TariffService {
   }
 
   /**
-   * Calculate total energy costs including dynamic tariffs
+   * Calculate total energy costs using Ecopower tariff structure
    */
   async calculateEnergyCosts(
     start: string,
     stop: string
   ): Promise<TariffCalculation> {
     // Get consumption data
-    const consumptionData = await influxService.queryConsumption(start, stop, '1h');
+    const consumptionData = await influxService.queryConsumption(start, stop, '15m');
 
-    // Get production data
-    const productionData = await influxService.querySolarProduction(start, stop, '1h');
+    // Get production data (injection)
+    const productionData = await influxService.querySolarProduction(start, stop, '15m');
 
-    // Get price data
+    // Get EPEX price data
     const priceData = await influxService.queryEnergyPrices(start, stop);
 
-    // Get Fluvius capacity tariff
-    const capacityTariff = await this.calculateFluviusCapacityTariff();
+    // Initialize counters
+    let totalKwhDelivered = 0;
+    let totalKwhReturned = 0;
+    let peakPowerKw = 0;
+    let energyCost = 0;
+    let energyRevenue = 0;
 
-    // Calculate consumption cost
-    let consumptionCost = 0;
-    const defaultPrice = parseFloat(process.env.DEFAULT_ELECTRICITY_PRICE || '0.30');
+    // Default EPEX price if not available (EUR/MWh)
+    const defaultEpexPrice = parseFloat(process.env.DEFAULT_EPEX_PRICE || '100');
 
+    // Process consumption readings
     for (const meterData of consumptionData) {
       for (const point of meterData.data) {
-        // Find matching price for this timestamp
-        const price = this.findPriceForTimestamp(point.timestamp, priceData) || defaultPrice;
-        consumptionCost += (point.value / 1000) * price; // Convert W to kW
+        // Convert W to kW
+        const powerKw = point.value / 1000;
+
+        // Convert 15-minute power reading to kWh
+        const kwh15min = powerKw * 0.25;
+        totalKwhDelivered += kwh15min;
+
+        // Track peak power
+        if (powerKw > peakPowerKw) {
+          peakPowerKw = powerKw;
+        }
+
+        // Get EPEX price for this timestamp (convert from EUR/kWh to EUR/MWh if needed)
+        const price = this.findPriceForTimestamp(point.timestamp, priceData);
+        const epexPrice = price !== null ? price : defaultEpexPrice;
+
+        // Calculate cost for this period using Ecopower formula
+        const costPerKwh = this.calculateEnergyCostPerKwh(epexPrice);
+        energyCost += costPerKwh * kwh15min;
       }
     }
 
-    // Calculate production revenue (feed-in)
-    let productionRevenue = 0;
-    const defaultFeedInPrice = parseFloat(process.env.DEFAULT_FEEDIN_PRICE || '0.05');
-
+    // Process injection readings (solar production returned to grid)
     for (const point of productionData) {
-      const price = defaultFeedInPrice; // Could be dynamic too
-      productionRevenue += (point.value / 1000) * price;
+      // Convert W to kW
+      const powerKw = point.value / 1000;
+
+      // Convert 15-minute power reading to kWh
+      const kwh15min = powerKw * 0.25;
+      totalKwhReturned += kwh15min;
+
+      // Get EPEX price for this timestamp
+      const price = this.findPriceForTimestamp(point.timestamp, priceData);
+      const epexPrice = price !== null ? price : defaultEpexPrice;
+
+      // Calculate revenue for this period using Ecopower formula
+      const revenuePerKwh = this.calculateEnergyRevenuePerKwh(epexPrice);
+      energyRevenue += revenuePerKwh * kwh15min;
     }
 
-    // Total costs
-    const energyCost = consumptionCost;
-    const capacityCost = capacityTariff.monthlyCost;
-    const feedInRevenue = productionRevenue;
-    const totalCost = energyCost + capacityCost;
-    const netCost = totalCost - feedInRevenue;
+    // Calculate all cost components
+    const fixedCost = this.calculateFixedCost();
+    const distributionCost = this.calculateDistributionCost(totalKwhDelivered);
+    const injectionCost = this.calculateInjectionCost(totalKwhReturned);
+    const gscCost = this.calculateGscCost(totalKwhDelivered);
+    const wkkCost = this.calculateWkkCost(totalKwhDelivered);
+    const capacityCost = this.calculateMonthlyCapacityCost(peakPowerKw);
+
+    // Calculate totals
+    const totalCost = fixedCost + energyCost + distributionCost + injectionCost + gscCost + wkkCost + capacityCost;
+    const netCost = totalCost - energyRevenue;
 
     return {
       totalCost,
-      energyCost,
-      capacityCost,
-      feedInRevenue,
       netCost,
       breakdown: {
-        consumptionCost,
-        productionRevenue,
-        fluviusCapacityTariff: capacityCost,
+        fixedCost,
+        energyCost,
+        energyRevenue,
+        distributionCost,
+        injectionCost,
+        gscCost,
+        wkkCost,
+        capacityCost,
+      },
+      usage: {
+        totalKwhDelivered,
+        totalKwhReturned,
+        peakPowerKw,
       },
     };
   }
@@ -189,16 +315,33 @@ export class TariffService {
   }
 
   /**
-   * Get current electricity price
+   * Get current electricity price (EUR/kWh) based on EPEX price
+   * Note: Expects EPEX prices in InfluxDB to be in EUR/MWh
    */
-  async getCurrentPrice(): Promise<number> {
+  async getCurrentPrice(): Promise<{ pricePerKwh: number; epexPrice: number; breakdown: any }> {
     const prices = await influxService.queryEnergyPrices('-1h', 'now()');
 
+    let epexPrice = parseFloat(process.env.DEFAULT_EPEX_PRICE || '100');
+
     if (prices.length > 0) {
-      return prices[prices.length - 1].value;
+      // Use the most recent EPEX price (expected to be in EUR/MWh)
+      epexPrice = prices[prices.length - 1].value;
     }
 
-    return parseFloat(process.env.DEFAULT_ELECTRICITY_PRICE || '0.30');
+    // Calculate the total price per kWh including all components
+    const energyCostPerKwh = this.calculateEnergyCostPerKwh(epexPrice);
+    const totalPricePerKwh = energyCostPerKwh + this.DISTRIBUTION_TARIFF + this.GSC_TARIFF + this.WKK_TARIFF;
+
+    return {
+      pricePerKwh: totalPricePerKwh,
+      epexPrice,
+      breakdown: {
+        energyCost: energyCostPerKwh,
+        distribution: this.DISTRIBUTION_TARIFF,
+        gsc: this.GSC_TARIFF,
+        wkk: this.WKK_TARIFF,
+      },
+    };
   }
 
   /**
@@ -208,6 +351,40 @@ export class TariffService {
     // This would integrate with your dynamic tariff provider
     // For now, return prices from InfluxDB
     return influxService.queryEnergyPrices('-1h', 'now() + 24h');
+  }
+
+  /**
+   * Get all Ecopower tariff rates
+   */
+  getTariffRates() {
+    return {
+      fixedCosts: {
+        ecopowerSubscription: this.ECOPOWER_SUBSCRIPTION,
+        fluviusSubscription: this.FLUVIUS_SUBSCRIPTION,
+        total: this.calculateFixedCost(),
+      },
+      energyCost: {
+        consumptionCoefficient: this.CONSUMPTION_COEFFICIENT,
+        consumptionFixed: this.CONSUMPTION_FIXED,
+        formula: '0.00102 × EPEX_EUR_MWh + 0.004 EUR/kWh',
+      },
+      injectionRevenue: {
+        injectionCoefficient: this.INJECTION_COEFFICIENT,
+        injectionFixed: this.INJECTION_FIXED,
+        formula: '0.00098 × EPEX_EUR_MWh - 0.015 EUR/kWh',
+      },
+      distributionAndOther: {
+        distribution: this.DISTRIBUTION_TARIFF,
+        injection: this.INJECTION_TARIFF,
+        gsc: this.GSC_TARIFF,
+        wkk: this.WKK_TARIFF,
+      },
+      capacity: {
+        yearlyRate: this.CAPACITY_TARIFF_YEARLY,
+        monthlyRate: this.CAPACITY_TARIFF_YEARLY / 12,
+        unit: 'EUR/kW',
+      },
+    };
   }
 }
 
