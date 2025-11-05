@@ -163,13 +163,16 @@ export class InfluxService {
 
   /**
    * Calculate peak consumption for Fluvius capacity tariff
+   * Uses P1 meter PowerDelivered as it's the main meter measuring total home consumption
    */
   async calculateMonthlyPeaks(months: number = 12): Promise<number[]> {
     const query = `
       from(bucket: "${influxConfig.meteringBucket}")
         |> range(start: -${months}mo)
-        |> filter(fn: (r) => r._measurement == "${influxConfig.measurements.consumption}")
-        |> filter(fn: (r) => r._field == "power")
+        |> filter(fn: (r) => r._measurement == "${influxConfig.meteringMeasurement}")
+        |> filter(fn: (r) => r.source == "p1")
+        |> filter(fn: (r) => r._field == "PowerDelivered")
+        |> map(fn: (r) => ({ r with _value: r._value * 1000.0 }))
         |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)
         |> aggregateWindow(every: 1mo, fn: max, createEmpty: false)
         |> yield(name: "monthly_peaks")
@@ -330,8 +333,9 @@ export class InfluxService {
   }
 
   /**
-   * Query net consumption (grid power - solar production)
-   * This calculates actual home consumption by combining P1 grid data with PV production
+   * Query net consumption (total home consumption including solar self-consumption)
+   * This calculates actual home consumption by combining P1 grid delivery with PV production
+   * Formula: Total consumption = PowerDelivered (from grid) + PV production (solar)
    */
   async queryNetConsumption(
     start: string,
@@ -358,11 +362,11 @@ export class InfluxService {
         |> filter(fn: (r) => r["metric"] == "Power")
         |> aggregateWindow(every: ${window}, fn: mean, createEmpty: false)
 
-      // Join and calculate net consumption
+      // Join and calculate total home consumption (grid + solar)
       join(tables: {p1: p1Data, sdm: sdmData}, on: ["_time"])
         |> map(fn: (r) => ({
             _time: r._time,
-            _value: r._value_p1 + (-1.0 * r._value_sdm),
+            _value: r._value_p1 + r._value_sdm,
             _field: "net_consumption"
         }))
         |> yield(name: "net_consumption")
