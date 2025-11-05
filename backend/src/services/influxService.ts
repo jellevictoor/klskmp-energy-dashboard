@@ -107,26 +107,15 @@ export class InfluxService {
     currentPrice?: number;
   }> {
     const query = `
-      import "date"
-
-      consumption = from(bucket: "${influxConfig.bucket}")
+      from(bucket: "${influxConfig.bucket}")
         |> range(start: -5m)
-        |> filter(fn: (r) => r._measurement == "${influxConfig.measurements.consumption}")
+        |> filter(fn: (r) =>
+          r._measurement == "${influxConfig.measurements.consumption}" or
+          r._measurement == "${influxConfig.measurements.production}"
+        )
         |> filter(fn: (r) => r._field == "power")
         |> last()
-        |> findRecord(fn: (key) => true, idx: 0)
-
-      production = from(bucket: "${influxConfig.bucket}")
-        |> range(start: -5m)
-        |> filter(fn: (r) => r._measurement == "${influxConfig.measurements.production}")
-        |> filter(fn: (r) => r._field == "power")
-        |> last()
-        |> findRecord(fn: (key) => true, idx: 0)
-
-      {
-        consumption: consumption._value,
-        production: production._value
-      }
+        |> yield(name: "current_values")
     `;
 
     try {
@@ -148,11 +137,21 @@ export class InfluxService {
         });
       });
 
-      // For now, return mock data structure
-      // In real implementation, parse the results properly
+      // Parse the results
+      let consumption = 0;
+      let production = 0;
+
+      results.forEach(r => {
+        if (r._measurement === influxConfig.measurements.consumption) {
+          consumption = r._value || 0;
+        } else if (r._measurement === influxConfig.measurements.production) {
+          production = r._value || 0;
+        }
+      });
+
       return {
-        consumption: 0,
-        production: 0,
+        consumption,
+        production,
         gridImport: 0,
         gridExport: 0,
       };
