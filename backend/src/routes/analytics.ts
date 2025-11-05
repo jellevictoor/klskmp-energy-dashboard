@@ -87,17 +87,17 @@ analyticsRouter.get('/comparison', async (req, res) => {
     }
 
     const [currentConsumption, previousConsumption] = await Promise.all([
-      influxService.queryConsumption(currentStart, 'now()'),
-      influxService.queryConsumption(previousStart, previousStop),
+      influxService.queryNetConsumption(currentStart, 'now()', '1h'),
+      influxService.queryNetConsumption(previousStart, previousStop, '1h'),
     ]);
 
     const currentTotal = currentConsumption.reduce(
-      (sum, m) => sum + m.data.reduce((s, p) => s + p.value, 0),
+      (sum, p) => sum + Math.abs(p.value),
       0
     );
 
     const previousTotal = previousConsumption.reduce(
-      (sum, m) => sum + m.data.reduce((s, p) => s + p.value, 0),
+      (sum, p) => sum + Math.abs(p.value),
       0
     );
 
@@ -123,7 +123,7 @@ analyticsRouter.get('/peak-times', async (req, res) => {
   try {
     const { days = 30 } = req.query;
 
-    const consumption = await influxService.queryConsumption(
+    const consumption = await influxService.queryNetConsumption(
       `-${days}d`,
       'now()',
       '1h'
@@ -133,12 +133,10 @@ analyticsRouter.get('/peak-times', async (req, res) => {
     const hourlyAggregates = new Array(24).fill(0);
     const hourlyCounts = new Array(24).fill(0);
 
-    for (const meterData of consumption) {
-      for (const point of meterData.data) {
-        const hour = new Date(point.timestamp).getHours();
-        hourlyAggregates[hour] += point.value;
-        hourlyCounts[hour]++;
-      }
+    for (const point of consumption) {
+      const hour = new Date(point.timestamp).getHours();
+      hourlyAggregates[hour] += Math.abs(point.value);
+      hourlyCounts[hour]++;
     }
 
     const hourlyAverages = hourlyAggregates.map((sum, i) =>

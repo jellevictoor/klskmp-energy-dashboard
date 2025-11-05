@@ -436,6 +436,40 @@ export class InfluxService {
   }
 
   /**
+   * Test raw InfluxDB connection - fetch any recent data
+   */
+  async testConnection(): Promise<any[]> {
+    const query = `
+      from(bucket: "${influxConfig.meteringBucket}")
+        |> range(start: -24h)
+        |> limit(n: 10)
+    `;
+
+    console.log('📊 Testing InfluxDB connection with query:', query);
+
+    return new Promise((resolve, reject) => {
+      const results: any[] = [];
+      queryApi.queryRows(query, {
+        next(row: string[], tableMeta: any) {
+          const o = tableMeta.toObject(row);
+          results.push(o);
+        },
+        error(error: Error) {
+          console.error('❌ Query error:', error);
+          reject(error);
+        },
+        complete() {
+          console.log(`✅ Test query returned ${results.length} results`);
+          if (results.length > 0) {
+            console.log('📋 Sample result:', JSON.stringify(results[0], null, 2));
+          }
+          resolve(results);
+        },
+      });
+    });
+  }
+
+  /**
    * Get current/latest power values from all sources
    */
   async getCurrentPowerValues(): Promise<{
@@ -460,6 +494,8 @@ export class InfluxService {
         |> yield(name: "current_values")
     `;
 
+    console.log('🔍 Executing getCurrentPowerValues query:', query);
+
     try {
       const results: any[] = [];
 
@@ -474,6 +510,7 @@ export class InfluxService {
             reject(error);
           },
           complete() {
+            console.log(`✅ Query returned ${results.length} results`);
             resolve(results);
           },
         });

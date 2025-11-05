@@ -10,6 +10,35 @@ export const dashboardRouter = Router();
 const cache = new NodeCache({ stdTTL: 60 });
 
 /**
+ * GET /api/dashboard/test
+ * Simple test endpoint
+ */
+dashboardRouter.get('/test', (req, res) => {
+  res.json({ message: 'Debug endpoint is working!', time: new Date().toISOString() });
+});
+
+/**
+ * GET /api/dashboard/debug-p1
+ * Debug P1 data structure
+ */
+dashboardRouter.get('/debug-p1', async (req, res) => {
+  try {
+    const p1Test = await influxService.testConnection();
+    const p1Data = await influxService.queryP1Power('-1h', 'now()', '5m');
+
+    res.json({
+      sampleData: p1Test.slice(0, 3),
+      p1PowerResults: {
+        count: p1Data.length,
+        sample: p1Data.slice(0, 3)
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message, stack: error.stack });
+  }
+});
+
+/**
  * GET /api/dashboard/overview
  * Get complete dashboard overview
  */
@@ -28,36 +57,27 @@ dashboardRouter.get('/overview', async (req, res) => {
       currentPrice,
       fluviusTariff,
       evccStatus,
-      todayConsumption,
-      todayProduction,
+      todayData,
       monthlyCosts,
     ] = await Promise.all([
-      influxService.getCurrentValues(),
+      influxService.getCurrentPowerValues(),
       tariffService.getCurrentPrice(),
       tariffService.calculateFluviusCapacityTariff(),
       evccService.getStatus(),
-      influxService.queryConsumption('-24h', 'now()', '1h'),
-      influxService.querySolarProduction('-24h', 'now()', '1h'),
+      influxService.queryNetConsumption('-24h', 'now()', '1h'),
       tariffService.getCostBreakdown('month'),
     ]);
 
-    // Calculate totals
-    const todayConsumptionTotal = todayConsumption.reduce(
-      (sum, m) => sum + m.data.reduce((s, p) => s + p.value, 0),
-      0
-    ) / 1000; // Convert to kWh
-
-    const todayProductionTotal = todayProduction.reduce(
-      (sum, p) => sum + p.value,
-      0
-    ) / 1000; // Convert to kWh
+    // Calculate totals from net consumption data
+    const todayConsumptionTotal = todayData.reduce((sum, p) => sum + Math.max(0, p.value), 0) / 1000; // Convert to kWh
+    const todayProductionTotal = currentValues.pvProduction > 0 ? currentValues.pvProduction / 1000 : 0;
 
     const overview = {
       current: {
-        consumption: currentValues.consumption,
-        production: currentValues.production,
-        gridImport: currentValues.gridImport,
-        gridExport: currentValues.gridExport,
+        consumption: currentValues.netConsumption > 0 ? currentValues.netConsumption : currentValues.p1,
+        production: currentValues.pvProduction,
+        gridImport: currentValues.p1,
+        gridExport: 0,
         price: currentPrice,
         timestamp: new Date().toISOString(),
       },
@@ -114,18 +134,14 @@ dashboardRouter.get('/summary/:period', async (req, res) => {
         break;
     }
 
-    const [consumption, production, costs, selfConsumption] = await Promise.all([
-      influxService.queryConsumption(start, 'now()', '1h'),
-      influxService.querySolarProduction(start, 'now()', '1h'),
+    const [netConsumption, production, costs, selfConsumption] = await Promise.all([
+      influxService.queryNetConsumption(start, 'now()', '1h'),
+      influxService.queryPVInverter(start, 'now()', '1h'),
       tariffService.calculateEnergyCosts(start, 'now()'),
       tariffService.calculateSelfConsumptionRatio(start, 'now()'),
     ]);
 
-    const totalConsumption = consumption.reduce(
-      (sum, m) => sum + m.data.reduce((s, p) => s + p.value, 0),
-      0
-    ) / 1000;
-
+    const totalConsumption = netConsumption.reduce((sum, p) => sum + Math.abs(p.value), 0) / 1000;
     const totalProduction = production.reduce((sum, p) => sum + p.value, 0) / 1000;
 
     res.json({
@@ -152,13 +168,13 @@ dashboardRouter.get('/chart/:type', async (req, res) => {
 
     switch (type) {
       case 'consumption-production': {
-        const [consumption, production] = await Promise.all([
-          influxService.queryConsumption(
+        const [netConsumption, pvProduction] = await Promise.all([
+          influxService.queryNetConsumption(
             start as string,
             stop as string,
             window as string
           ),
-          influxService.querySolarProduction(
+          influxService.queryPVInverter(
             start as string,
             stop as string,
             window as string
@@ -167,28 +183,18 @@ dashboardRouter.get('/chart/:type', async (req, res) => {
 
         // Combine data for chart
         const chartData = [];
-        const consumptionMap = new Map();
-
-        // Aggregate consumption by timestamp
-        for (const meterData of consumption) {
-          for (const point of meterData.data) {
-            const existing = consumptionMap.get(point.timestamp) || 0;
-            consumptionMap.set(point.timestamp, existing + point.value);
-          }
-        }
-
-        // Merge consumption and production
         const timestamps = new Set([
-          ...Array.from(consumptionMap.keys()),
-          ...production.map(p => p.timestamp),
+          ...netConsumption.map(p => p.timestamp),
+          ...pvProduction.map(p => p.timestamp),
         ]);
 
         for (const timestamp of timestamps) {
-          const productionPoint = production.find(p => p.timestamp === timestamp);
+          const netPoint = netConsumption.find(p => p.timestamp === timestamp);
+          const prodPoint = pvProduction.find(p => p.timestamp === timestamp);
           chartData.push({
             timestamp,
-            consumption: (consumptionMap.get(timestamp) || 0) / 1000,
-            production: productionPoint ? productionPoint.value / 1000 : 0,
+            consumption: netPoint ? Math.abs(netPoint.value) / 1000 : 0,
+            production: prodPoint ? prodPoint.value / 1000 : 0,
           });
         }
 

@@ -152,11 +152,16 @@ export class TariffService {
     start: string,
     stop: string
   ): Promise<TariffCalculation> {
-    // Get consumption data
-    const consumptionData = await influxService.queryConsumption(start, stop, '15m');
+    console.log(`💰 Calculating energy costs for period: ${start} to ${stop}`);
 
-    // Get production data (injection)
-    const productionData = await influxService.querySolarProduction(start, stop, '15m');
+    // Get net consumption data (home consumption from P1 + PV)
+    // Use 1h window for better data availability
+    const netConsumptionData = await influxService.queryNetConsumption(start, stop, '1h');
+    console.log(`📊 Net consumption data points: ${netConsumptionData.length}`);
+
+    // Get production data (PV inverter)
+    const productionData = await influxService.queryPVInverter(start, stop, '1h');
+    console.log(`☀️ Production data points: ${productionData.length}`);
 
     // Get EPEX price data
     const priceData = await influxService.queryEnergyPrices(start, stop);
@@ -171,29 +176,27 @@ export class TariffService {
     // Default EPEX price if not available (EUR/MWh)
     const defaultEpexPrice = parseFloat(process.env.DEFAULT_EPEX_PRICE || '100');
 
-    // Process consumption readings
-    for (const meterData of consumptionData) {
-      for (const point of meterData.data) {
-        // Convert W to kW
-        const powerKw = point.value / 1000;
+    // Process net consumption readings (home consumption)
+    for (const point of netConsumptionData) {
+      // Convert W to kW (use absolute value as net consumption can be negative when exporting)
+      const powerKw = Math.abs(point.value) / 1000;
 
-        // Convert 15-minute power reading to kWh
-        const kwh15min = powerKw * 0.25;
-        totalKwhDelivered += kwh15min;
+      // Convert 1-hour power reading to kWh
+      const kwh1h = powerKw * 1.0;
+      totalKwhDelivered += kwh1h;
 
-        // Track peak power
-        if (powerKw > peakPowerKw) {
-          peakPowerKw = powerKw;
-        }
-
-        // Get EPEX price for this timestamp (convert from EUR/kWh to EUR/MWh if needed)
-        const price = this.findPriceForTimestamp(point.timestamp, priceData);
-        const epexPrice = price !== null ? price : defaultEpexPrice;
-
-        // Calculate cost for this period using Ecopower formula
-        const costPerKwh = this.calculateEnergyCostPerKwh(epexPrice);
-        energyCost += costPerKwh * kwh15min;
+      // Track peak power
+      if (powerKw > peakPowerKw) {
+        peakPowerKw = powerKw;
       }
+
+      // Get EPEX price for this timestamp
+      const price = this.findPriceForTimestamp(point.timestamp, priceData);
+      const epexPrice = price !== null ? price : defaultEpexPrice;
+
+      // Calculate cost for this period using Ecopower formula
+      const costPerKwh = this.calculateEnergyCostPerKwh(epexPrice);
+      energyCost += costPerKwh * kwh1h;
     }
 
     // Process injection readings (solar production returned to grid)
@@ -201,9 +204,9 @@ export class TariffService {
       // Convert W to kW
       const powerKw = point.value / 1000;
 
-      // Convert 15-minute power reading to kWh
-      const kwh15min = powerKw * 0.25;
-      totalKwhReturned += kwh15min;
+      // Convert 1-hour power reading to kWh
+      const kwh1h = powerKw * 1.0;
+      totalKwhReturned += kwh1h;
 
       // Get EPEX price for this timestamp
       const price = this.findPriceForTimestamp(point.timestamp, priceData);
@@ -211,7 +214,7 @@ export class TariffService {
 
       // Calculate revenue for this period using Ecopower formula
       const revenuePerKwh = this.calculateEnergyRevenuePerKwh(epexPrice);
-      energyRevenue += revenuePerKwh * kwh15min;
+      energyRevenue += revenuePerKwh * kwh1h;
     }
 
     // Calculate all cost components
@@ -276,14 +279,11 @@ export class TariffService {
    * Calculate self-consumption ratio
    */
   async calculateSelfConsumptionRatio(start: string, stop: string): Promise<number> {
-    const productionData = await influxService.querySolarProduction(start, stop, '1h');
-    const consumptionData = await influxService.queryConsumption(start, stop, '1h');
+    const productionData = await influxService.queryPVInverter(start, stop, '1h');
+    const consumptionData = await influxService.queryNetConsumption(start, stop, '1h');
 
     const totalProduction = productionData.reduce((sum, p) => sum + p.value, 0);
-    const totalConsumption = consumptionData.reduce(
-      (sum, m) => sum + m.data.reduce((s, p) => s + p.value, 0),
-      0
-    );
+    const totalConsumption = consumptionData.reduce((sum, p) => sum + Math.abs(p.value), 0);
 
     if (totalProduction === 0) return 0;
 
