@@ -22,4 +22,7 @@ export const influxConfig = {
     price: process.env.INFLUX_PRICE_MEASUREMENT || 'energy_prices',
     p1: process.env.INFLUX_P1_MEASUREMENT || 'p1_meter',
   },
+  // Metering bucket configuration (for real-time power monitoring)
+  meteringBucket: process.env.INFLUX_METERING_BUCKET || 'metering',
+  meteringMeasurement: process.env.INFLUX_METERING_MEASUREMENT || 'energy',
 };
