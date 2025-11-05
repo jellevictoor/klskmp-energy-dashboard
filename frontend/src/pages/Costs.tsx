@@ -10,6 +10,7 @@ export function Costs() {
   const [breakdown, setBreakdown] = useState<any>(null)
   const [fluvius, setFluvius] = useState<any>(null)
   const [currentPrice, setCurrentPrice] = useState<number>(0)
+  const [currentPriceBreakdown, setCurrentPriceBreakdown] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -27,7 +28,8 @@ export function Costs() {
 
       setBreakdown(breakdownRes.data)
       setFluvius(fluviusRes.data)
-      setCurrentPrice(priceRes.data.price)
+      setCurrentPrice(priceRes.data.pricePerKwh || 0)
+      setCurrentPriceBreakdown(priceRes.data)
     } catch (err) {
       console.error('Error fetching cost data:', err)
     } finally {
@@ -44,11 +46,16 @@ export function Costs() {
   }
 
   const pieData = [
-    { name: 'Energy Consumption', value: breakdown?.breakdown.consumptionCost || 0 },
-    { name: 'Capacity Tariff', value: breakdown?.breakdown.fluviusCapacityTariff || 0 },
+    { name: 'Fixed Cost', value: breakdown?.breakdown.fixedCost || 0 },
+    { name: 'Energy Cost', value: breakdown?.breakdown.energyCost || 0 },
+    { name: 'Distribution', value: breakdown?.breakdown.distributionCost || 0 },
+    { name: 'GSC (Green)', value: breakdown?.breakdown.gscCost || 0 },
+    { name: 'WKK (CHP)', value: breakdown?.breakdown.wkkCost || 0 },
+    { name: 'Capacity Tariff', value: breakdown?.breakdown.capacityCost || 0 },
+    { name: 'Injection Cost', value: breakdown?.breakdown.injectionCost || 0 },
   ]
 
-  const COLORS = ['#3b82f6', '#ef4444']
+  const COLORS = ['#8b5cf6', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#ec4899']
 
   return (
     <div className="space-y-6">
@@ -76,7 +83,7 @@ export function Costs() {
         />
         <StatCard
           title="Feed-in Revenue"
-          value={formatCurrency(breakdown?.feedInRevenue || 0)}
+          value={formatCurrency(breakdown?.breakdown.energyRevenue || 0)}
           icon={TrendingDown}
           subtitle="Solar export"
         />
@@ -87,6 +94,67 @@ export function Costs() {
           subtitle="After revenue"
         />
       </div>
+
+      {/* Current Price Breakdown */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Current Price Breakdown (per kWh)</CardTitle>
+          <CardDescription>
+            Real-time price components based on EPEX market price
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">EPEX Market Price</span>
+              <span className="font-medium">
+                {currentPriceBreakdown?.epexPrice?.toFixed(2) || 'N/A'} €/MWh
+              </span>
+            </div>
+
+            <div className="border-t pt-3 mt-3">
+              <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">
+                Per kWh Components
+              </div>
+
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Energy Cost</span>
+                <span className="font-medium">
+                  {formatCurrency(currentPriceBreakdown?.breakdown?.energyCost || 0)}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Distribution</span>
+                <span className="font-medium">
+                  {formatCurrency(currentPriceBreakdown?.breakdown?.distribution || 0)}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">GSC (Green)</span>
+                <span className="font-medium">
+                  {formatCurrency(currentPriceBreakdown?.breakdown?.gsc || 0)}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">WKK (CHP)</span>
+                <span className="font-medium">
+                  {formatCurrency(currentPriceBreakdown?.breakdown?.wkk || 0)}
+                </span>
+              </div>
+
+              <div className="border-t pt-3 mt-3 flex justify-between items-center">
+                <span className="font-bold">Total per kWh</span>
+                <span className="text-xl font-bold">
+                  {formatCurrency(currentPrice)}
+                </span>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Cost Breakdown */}
       <div className="grid gap-4 md:grid-cols-2">
@@ -135,30 +203,98 @@ export function Costs() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
+            <div className="space-y-3">
+              <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">
+                Cost Components
+              </div>
+
               <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Energy Consumption</span>
-                <span className="font-bold">
-                  {formatCurrency(breakdown?.breakdown.consumptionCost || 0)}
+                <span className="text-sm text-muted-foreground">Fixed Subscription</span>
+                <span className="font-medium">
+                  {formatCurrency(breakdown?.breakdown.fixedCost || 0)}
                 </span>
               </div>
+
               <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Fluvius Capacity Tariff</span>
-                <span className="font-bold">
-                  {formatCurrency(breakdown?.breakdown.fluviusCapacityTariff || 0)}
+                <span className="text-sm text-muted-foreground">Energy Cost</span>
+                <span className="font-medium">
+                  {formatCurrency(breakdown?.breakdown.energyCost || 0)}
                 </span>
               </div>
+
               <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Solar Feed-in</span>
-                <span className="font-bold text-green-600">
-                  -{formatCurrency(breakdown?.breakdown.productionRevenue || 0)}
+                <span className="text-sm text-muted-foreground">Distribution Cost</span>
+                <span className="font-medium">
+                  {formatCurrency(breakdown?.breakdown.distributionCost || 0)}
                 </span>
               </div>
-              <div className="border-t pt-4 flex justify-between items-center">
-                <span className="font-medium">Total</span>
+
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">GSC (Green Certificates)</span>
+                <span className="font-medium">
+                  {formatCurrency(breakdown?.breakdown.gscCost || 0)}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">WKK (CHP Surcharge)</span>
+                <span className="font-medium">
+                  {formatCurrency(breakdown?.breakdown.wkkCost || 0)}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Capacity Tariff</span>
+                <span className="font-medium">
+                  {formatCurrency(breakdown?.breakdown.capacityCost || 0)}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Injection Tariff</span>
+                <span className="font-medium">
+                  {formatCurrency(breakdown?.breakdown.injectionCost || 0)}
+                </span>
+              </div>
+
+              <div className="border-t pt-3 mt-3">
+                <div className="flex justify-between items-center text-sm mb-2">
+                  <span className="text-muted-foreground">Subtotal</span>
+                  <span className="font-medium">
+                    {formatCurrency(breakdown?.totalCost || 0)}
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm text-green-600">Energy Revenue (Solar)</span>
+                  <span className="font-medium text-green-600">
+                    -{formatCurrency(breakdown?.breakdown.energyRevenue || 0)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="border-t pt-3 flex justify-between items-center">
+                <span className="font-bold">Net Cost</span>
                 <span className="text-xl font-bold">
                   {formatCurrency(breakdown?.netCost || 0)}
                 </span>
+              </div>
+
+              <div className="mt-4 p-3 bg-muted rounded-lg text-xs">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-muted-foreground">Consumed:</span>{' '}
+                    <span className="font-medium">{breakdown?.usage.totalKwhDelivered?.toFixed(2) || 0} kWh</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Returned:</span>{' '}
+                    <span className="font-medium">{breakdown?.usage.totalKwhReturned?.toFixed(2) || 0} kWh</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Peak:</span>{' '}
+                    <span className="font-medium">{breakdown?.usage.peakPowerKw?.toFixed(2) || 0} kW</span>
+                  </div>
+                </div>
               </div>
             </div>
           </CardContent>
