@@ -259,16 +259,27 @@ export class TariffService {
 
     switch (period) {
       case 'day':
-        start = '-1d';
+        // Start of today
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        start = startOfDay.toISOString();
         break;
       case 'week':
-        start = '-7d';
+        // Start of this week (Monday)
+        const dayOfWeek = now.getDay();
+        const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysToMonday);
+        startOfWeek.setHours(0, 0, 0, 0);
+        start = startOfWeek.toISOString();
         break;
       case 'month':
-        start = '-30d';
+        // Start of this month
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        start = startOfMonth.toISOString();
         break;
       case 'year':
-        start = '-365d';
+        // Start of this year
+        const startOfYear = new Date(now.getFullYear(), 0, 1);
+        start = startOfYear.toISOString();
         break;
     }
 

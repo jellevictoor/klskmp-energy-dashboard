@@ -51,6 +51,11 @@ dashboardRouter.get('/overview', async (req, res) => {
       return res.json(cached);
     }
 
+    // Calculate start of today for accurate daily totals
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfTodayISO = startOfToday.toISOString();
+
     // Fetch all data in parallel
     const [
       currentValues,
@@ -64,7 +69,7 @@ dashboardRouter.get('/overview', async (req, res) => {
       tariffService.getCurrentPrice(),
       tariffService.calculateFluviusCapacityTariff(),
       evccService.getStatus(),
-      influxService.queryNetConsumption('-24h', 'now()', '1h'),
+      influxService.queryNetConsumption(startOfTodayISO, 'now()', '1h'),
       tariffService.getCostBreakdown('month'),
     ]);
 
@@ -121,16 +126,32 @@ dashboardRouter.get('/summary/:period', async (req, res) => {
       return res.status(400).json({ error: 'Invalid period' });
     }
 
-    let start = '-1d';
+    const now = new Date();
+    let start: string;
+
     switch (period) {
+      case 'day':
+        // Start of today
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        start = startOfDay.toISOString();
+        break;
       case 'week':
-        start = '-7d';
+        // Start of this week (Monday)
+        const dayOfWeek = now.getDay();
+        const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysToMonday);
+        startOfWeek.setHours(0, 0, 0, 0);
+        start = startOfWeek.toISOString();
         break;
       case 'month':
-        start = '-30d';
+        // Start of this month
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        start = startOfMonth.toISOString();
         break;
       case 'year':
-        start = '-365d';
+        // Start of this year
+        const startOfYear = new Date(now.getFullYear(), 0, 1);
+        start = startOfYear.toISOString();
         break;
     }
 
