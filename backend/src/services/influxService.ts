@@ -82,13 +82,16 @@ export class InfluxService {
    */
   async queryEnergyPrices(
     start: string,
-    stop: string
+    stop: string,
+    window: string = '1h'
   ): Promise<EnergyDataPoint[]> {
     const query = `
-      from(bucket: "${influxConfig.bucket}")
+      from(bucket: "${influxConfig.priceBucket}")
         |> range(start: ${start}, stop: ${stop})
         |> filter(fn: (r) => r._measurement == "${influxConfig.measurements.price}")
-        |> filter(fn: (r) => r._field == "price" or r._field == "buy_price")
+        |> filter(fn: (r) => r._field == "price_eur_kwh" or r._field == "price_eur_mwh" or r._field == "price_eur_kwh_with_tax")
+        |> filter(fn: (r) => r.country == "${influxConfig.priceCountry}")
+        |> aggregateWindow(every: ${window}, fn: mean, createEmpty: false)
         |> yield(name: "prices")
     `;
 
